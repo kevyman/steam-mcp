@@ -1,0 +1,35 @@
+services:
+  steam-mcp:
+    build: .
+    restart: always
+    expose:
+      - "8000"
+    volumes:
+      - ./data/steam:/data
+    env_file: .env
+
+  # Add future MCPs here as new services, e.g.:
+  # notes-mcp:
+  #   build: ./notes-mcp
+  #   restart: always
+  #   expose:
+  #     - "8001"
+  #   volumes:
+  #     - ./data/notes:/data
+  #   env_file: ./notes-mcp/.env
+
+  caddy:
+    image: caddy:alpine
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

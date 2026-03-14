@@ -1,0 +1,8 @@
+steam.yourname.duckdns.org {
+    reverse_proxy steam-mcp:8000
+}
+
+# Add future MCPs here, e.g.:
+# notes.yourname.duckdns.org {
+#     reverse_proxy notes-mcp:8001
+# }
