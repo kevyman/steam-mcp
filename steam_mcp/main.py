@@ -22,7 +22,7 @@ async def lifespan(app):
     """Startup: init DB, sync library if stale, kick off HLTB pre-warm."""
     from .data.db import init_db, get_meta
     from .data.steam_xml import fetch_library, STALE_HOURS
-    from .data.hltb import prewarm_hltb
+    from .data.enrich_bg import background_enrich
 
     await init_db()
     logger.info("Database initialized")
@@ -46,8 +46,8 @@ async def lifespan(app):
         except Exception as e:
             logger.error("Library sync failed: %s", e)
 
-    # Kick off HLTB pre-warm in background (non-blocking)
-    asyncio.create_task(prewarm_hltb())
+    # Background enrichment: Steam Store, HLTB, ProtonDB (non-blocking)
+    asyncio.create_task(background_enrich())
 
     yield
 

@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 from datetime import datetime, timezone
 
 import httpx
@@ -65,9 +66,9 @@ async def _scrape_all_pages() -> list[dict]:
     page = 1
     async with httpx.AsyncClient(timeout=15, headers={"User-Agent": "steam-mcp/1.0"}) as client:
         while True:
-            url = BASE_URL if page == 1 else f"{BASE_URL}?page={page}"
+            url = BASE_URL if page == 1 else f"{BASE_URL}/page/{page}"
             try:
-                resp = await client.get(url)
+                resp = await client.get(url, follow_redirects=True)
                 resp.raise_for_status()
             except Exception as e:
                 logger.warning("Backloggd page %d fetch failed: %s", page, e)
@@ -88,26 +89,31 @@ async def _scrape_all_pages() -> list[dict]:
 
 
 def _parse_page(html: str) -> list[dict]:
-    """Parse one Backloggd reviews page."""
+    """Parse one Backloggd reviews page.
+
+    The page structure places game titles in `.game-name h3` elements
+    as siblings *before* each `.review-card` div. We iterate over the
+    review cards and look backwards to find the preceding game name.
+    """
     soup = BeautifulSoup(html, "lxml")
     reviews = []
 
-    # Backloggd review cards — selectors may need adjustment if site changes
-    for card in soup.select(".review-card, [class*='review']"):
-        title_el = card.select_one(".game-title, [class*='game-title'], h3, h4")
-        if title_el is None:
-            continue
+    # The main reviews container: div.user-reviews containing the review cards
+    cards = soup.select(".review-card")
 
-        title = title_el.get_text(strip=True)
+    for card in cards:
+        # Game title is in a .game-name row that precedes the review-card
+        title = _find_preceding_title(card)
         if not title:
             continue
 
-        # Star rating — look for filled stars or rating text
+        # Star rating: .stars-top has style="width:XX%" where 100% = 5 stars
         score = _extract_score(card)
         if score is None:
             continue
 
-        text_el = card.select_one(".review-text, [class*='review-text'], p")
+        # Review text is in .review-body .card-text
+        text_el = card.select_one(".review-body .card-text")
         text = text_el.get_text(strip=True) if text_el else ""
 
         reviews.append({"title": title, "score": score, "text": text})
@@ -115,26 +121,49 @@ def _parse_page(html: str) -> list[dict]:
     return reviews
 
 
-def _extract_score(card: Tag) -> float | None:
-    """Try to extract a 0.5–5 star score from a review card."""
-    # Look for a rating element
-    rating_el = card.select_one("[class*='rating'], [class*='stars'], .rating")
-    if rating_el:
-        text = rating_el.get_text(strip=True)
-        try:
-            val = float(text.replace("★", "").replace("⭐", "").strip())
-            if 0.5 <= val <= 5:
-                return val
-        except ValueError:
-            pass
+def _find_preceding_title(card: Tag) -> str | None:
+    """Walk backwards from a .review-card to find the preceding .game-name h3."""
+    sibling = card.find_previous_sibling()
+    # Walk up — the card is inside a col > row structure, so we may need
+    # to look at previous siblings of the card's parent containers too.
+    node = card
+    for _ in range(5):  # limit depth
+        prev = node.find_previous_sibling()
+        if prev:
+            # Check if this sibling (or something inside it) has .game-name
+            if isinstance(prev, Tag):
+                if "game-name" in (prev.get("class") or []):
+                    h3 = prev.select_one("h3")
+                    if h3:
+                        return h3.get_text(strip=True)
+                gn = prev.select_one(".game-name h3")
+                if gn:
+                    return gn.get_text(strip=True)
+        # Move up to parent and try again
+        node = node.parent
+        if node is None:
+            break
 
-    # Count filled star icons
-    filled = len(card.select(".star-filled, .filled, [class*='filled']"))
-    half = len(card.select(".star-half, .half, [class*='half']"))
-    if filled > 0 or half > 0:
-        score = filled + half * 0.5
-        if 0.5 <= score <= 5:
-            return score
+    return None
+
+
+def _extract_score(card: Tag) -> float | None:
+    """Extract star rating from the .stars-top width percentage.
+
+    Backloggd renders ratings as two overlapping rows of star spans:
+      .stars-bottom: empty stars (always 5)
+      .stars-top: filled stars, clipped via style="width:XX%"
+    So width:100% = 5.0, width:50% = 2.5, width:10% = 0.5, etc.
+    """
+    stars_top = card.select_one(".stars-top")
+    if stars_top:
+        style = stars_top.get("style", "")
+        match = re.search(r"width:\s*([\d.]+)%", style)
+        if match:
+            pct = float(match.group(1))
+            score = round(pct / 20, 1)  # 100% / 20 = 5.0
+            if 0.5 <= score <= 5:
+                return score
 
     return None
 

@@ -18,17 +18,34 @@ logger = logging.getLogger(__name__)
 async def sync_steam_reviews() -> dict:
     """
     Scrape paginated Steam reviews, upsert into ratings.
-    Returns stats dict.
+
+    Normalized score combines the user's thumbs-up/down with the game's
+    community review score (1–9 enum from Steam Store API) to produce a
+    1–10 rating:
+      - Thumbs up  → 6–10, scaled by community score (higher = better)
+      - Thumbs down → 1–4, scaled by community score (lower  = worse)
+      - No community score → fallback 7.5 (up) / 2.5 (down)
     """
     reviews = await _scrape_all_pages()
     synced = 0
     now = datetime.now(timezone.utc).isoformat()
 
+    # Pre-fetch community review scores for all reviewed games
+    community_scores: dict[int, int | None] = {}
+    async with get_db() as db:
+        for review in reviews:
+            row = await db.execute_fetchone(
+                "SELECT steam_review_score FROM games WHERE appid = ?",
+                (review["appid"],),
+            )
+            community_scores[review["appid"]] = row["steam_review_score"] if row else None
+
     async with get_db() as db:
         for review in reviews:
             appid = review["appid"]
-            raw = review["vote"]        # 1 (up) or -1 (down)
-            normalized = 7.0 if raw == 1 else 3.0
+            vote = review["vote"]  # 1 (up) or -1 (down)
+            community = community_scores.get(appid)
+            normalized = _compute_score(vote, community)
 
             await db.execute(
                 """INSERT INTO ratings (appid, source, raw_score, normalized_score, review_text, synced_at)
@@ -38,13 +55,29 @@ async def sync_steam_reviews() -> dict:
                        normalized_score = excluded.normalized_score,
                        review_text = excluded.review_text,
                        synced_at = excluded.synced_at""",
-                (appid, float(raw), normalized, review.get("text", ""), now),
+                (appid, float(vote), normalized, review.get("text", ""), now),
             )
             synced += 1
 
         await db.commit()
 
     return {"synced": synced, "total_scraped": len(reviews)}
+
+
+def _compute_score(vote: int, community_score: int | None) -> float:
+    """Combine thumbs-up/down with community review score (1–9) into a 1–10 rating.
+
+    Thumbs up  → 6 + (community - 1) * 0.5  → range 6–10
+    Thumbs down → 1 + (community - 1) * 0.375 → range 1–4
+    """
+    if vote == 1:
+        if community_score and 1 <= community_score <= 9:
+            return round(6 + (community_score - 1) * 0.5, 1)
+        return 7.5  # fallback: midpoint of 6–10
+    else:
+        if community_score and 1 <= community_score <= 9:
+            return round(1 + (community_score - 1) * 0.375, 1)
+        return 2.5  # fallback: midpoint of 1–4
 
 
 async def _scrape_all_pages() -> list[dict]:
