@@ -42,8 +42,8 @@ async def get_game_detail(name: str | None = None, appid: int | None = None) -> 
     async with get_db() as db:
         row = await db.execute_fetchone("SELECT * FROM games WHERE appid = ?", (game_appid,))
         rating = await db.execute_fetchone(
-            "SELECT source, raw_score, normalized_score, review_text FROM ratings WHERE appid = ? ORDER BY source",
-            (game_appid,),
+            "SELECT source, raw_score, normalized_score, review_text FROM ratings WHERE game_id = ? ORDER BY source",
+            (row["id"],),
         )
 
     rtime = row["rtime_last_played"]
@@ -67,7 +67,7 @@ async def get_game_detail(name: str | None = None, appid: int | None = None) -> 
         "steam_review_desc": row["steam_review_desc"],
         "hltb_main": row["hltb_main"],
         "hltb_extra": row["hltb_extra"],
-        "hltb_completionist": row["hltb_completionist"],
+        "hltb_completionist": row["hltb_complete"],
         "metacritic_score": row["metacritic_score"],
         "protondb_tier": row["protondb_tier"],
     }

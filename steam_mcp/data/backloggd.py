@@ -22,9 +22,10 @@ async def sync_backloggd() -> dict:
     upsert into ratings. Returns stats dict.
     """
     async with get_db() as db:
-        game_rows = await db.execute_fetchall("SELECT appid, name FROM games")
+        game_rows = await db.execute_fetchall("SELECT id, appid, name FROM games")
 
     name_to_appid = {r["name"].lower(): r["appid"] for r in game_rows}
+    appid_to_game_id = {r["appid"]: r["id"] for r in game_rows}
     all_names = list(name_to_appid.keys())
 
     reviews = await _scrape_all_pages()
@@ -40,18 +41,23 @@ async def sync_backloggd() -> dict:
                 skipped += 1
                 continue
 
+            game_id = appid_to_game_id.get(appid)
+            if game_id is None:
+                skipped += 1
+                continue
+
             raw = review["score"]  # 0.5–5
             normalized = raw * 2   # → 1–10
 
             await db.execute(
-                """INSERT INTO ratings (appid, source, raw_score, normalized_score, review_text, synced_at)
+                """INSERT INTO ratings (game_id, source, raw_score, normalized_score, review_text, synced_at)
                    VALUES (?, 'backloggd', ?, ?, ?, ?)
-                   ON CONFLICT(appid, source) DO UPDATE SET
+                   ON CONFLICT(game_id, source) DO UPDATE SET
                        raw_score = excluded.raw_score,
                        normalized_score = excluded.normalized_score,
                        review_text = excluded.review_text,
                        synced_at = excluded.synced_at""",
-                (appid, raw, normalized, review.get("text", ""), now),
+                (game_id, raw, normalized, review.get("text", ""), now),
             )
             synced += 1
 

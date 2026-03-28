@@ -20,7 +20,7 @@ async def get_hltb(appid: int, name: str) -> dict | None:
     """
     async with get_db() as db:
         row = await db.execute_fetchone(
-            "SELECT hltb_main, hltb_extra, hltb_completionist, hltb_cached_at FROM games WHERE appid = ?",
+            "SELECT hltb_main, hltb_extra, hltb_complete, hltb_cached_at FROM games WHERE appid = ?",
             (appid,),
         )
 
@@ -32,7 +32,7 @@ async def get_hltb(appid: int, name: str) -> dict | None:
             return {
                 "hltb_main": row["hltb_main"],
                 "hltb_extra": row["hltb_extra"],
-                "hltb_completionist": row["hltb_completionist"],
+                "hltb_completionist": row["hltb_complete"],
             }
 
     return await _fetch_and_cache(appid, name)
@@ -71,7 +71,7 @@ async def _cache_result(
 ) -> None:
     async with get_db() as db:
         await db.execute(
-            """UPDATE games SET hltb_main = ?, hltb_extra = ?, hltb_completionist = ?, hltb_cached_at = ?
+            """UPDATE games SET hltb_main = ?, hltb_extra = ?, hltb_complete = ?, hltb_cached_at = ?
                WHERE appid = ?""",
             (main, extra, comp, cached_at, appid),
         )

@@ -45,7 +45,7 @@ async def get_backlog_stats() -> dict:
         # Highest-rated unplayed by my ratings
         best_unplayed_rated = await db.execute_fetchone(
             """SELECT g.name, r.normalized_score FROM games g
-               JOIN ratings r ON r.appid = g.appid
+               JOIN ratings r ON r.game_id = g.id
                WHERE (g.playtime_forever = 0 OR g.is_farmed = 1)
                ORDER BY r.normalized_score DESC
                LIMIT 1"""
