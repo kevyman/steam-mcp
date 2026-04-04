@@ -43,10 +43,22 @@ async def fetch_psn_library() -> list[dict]:
     def _fetch():
         psnawp = _get_psnawp()
         client = psnawp.me()
+        # Skip media/streaming apps: PPSA IDs that PSN doesn't categorise as games.
+        # A secondary name blocklist catches the handful of apps with legacy CUSA IDs
+        # (e.g. PS4-era Spotify, Disney+) that share the same UNKNOWN category but
+        # wouldn't be caught by the prefix check alone.
+        _MEDIA_APP_NAMES = {
+            "Disney+", "Spotify", "Netflix", "YouTube", "Prime Video",
+            "Plex", "Crunchyroll", "Apple TV", "Twitch", "SONY PICTURES CORE",
+        }
         results = []
         for entry in client.title_stats():
             name = entry.name
             if not name:
+                continue
+            if str(entry.category) == "PlatformCategory.UNKNOWN" and (entry.title_id or "").startswith("PPSA"):
+                continue
+            if name in _MEDIA_APP_NAMES:
                 continue
             minutes = None
             if entry.play_duration is not None:
