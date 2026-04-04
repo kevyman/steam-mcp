@@ -181,7 +181,7 @@ def _load_vgcs_cookies() -> dict[str, str] | None:
 
     # Accept both {name: value} dict and Cookie Editor array [{name, value, ...}]
     if isinstance(raw, list):
-        return {c["name"]: c["value"] for c in raw if "name" in c and "value" in c}
+        return {c["name"]: c["value"] for c in raw if isinstance(c, dict) and "name" in c and "value" in c}
     if isinstance(raw, dict):
         return raw
     return None

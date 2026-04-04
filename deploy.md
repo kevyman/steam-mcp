@@ -155,7 +155,9 @@ nxapi nso auth
 NINTENDO_SESSION_TOKEN=<token from nxapi nso auth>
 ```
 
-`nxapi` does not need to be installed inside the Docker container — it runs as a subprocess on the host (the container inherits the host environment for subprocess calls). If you prefer to isolate it inside the container, add `npm install -g nxapi` to the Dockerfile instead and mount nothing extra.
+`nxapi` must be installed **inside the container** if you want to use it in a Dockerized deployment — subprocesses spawned by the app run inside the container, not on the host. Add `npm install -g nxapi` to the Dockerfile for this.
+
+Alternatively, skip nxapi entirely and use the VGCS cookie fallback (see below) — this is the recommended path for Docker since it requires no extra tooling.
 
 If the session token expires, re-run `nxapi nso auth` and update `.env`, then restart the container.
 
