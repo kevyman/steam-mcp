@@ -100,16 +100,10 @@ def _nxapi_available() -> bool:
 
 async def _run_nxapi(*args: str) -> str:
     """Run an nxapi CLI command and return stdout."""
-    token = os.environ.get("NINTENDO_SESSION_TOKEN")
-    env = {**os.environ}
-    if token:
-        env["NXAPI_SESSION_TOKEN"] = token
-
     proc = await asyncio.create_subprocess_exec(
         NXAPI_BIN, *args,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-        env=env,
     )
     stdout, stderr = await proc.communicate()
     if proc.returncode != 0:
@@ -128,7 +122,9 @@ async def fetch_nintendo_play_history() -> list[dict]:
 
     Playtime is reported in minutes by nxapi — no unit conversion applied.
     """
-    raw = await _run_nxapi("nso", "play-activity", "--json")
+    token = os.environ.get("NINTENDO_SESSION_TOKEN")
+    nso_args = ["nso", "--token", token, "play-activity", "--json"] if token else ["nso", "play-activity", "--json"]
+    raw = await _run_nxapi(*nso_args)
     data = json.loads(raw)
 
     items = data if isinstance(data, list) else data.get("items", data.get("titles", []))
@@ -146,6 +142,11 @@ async def fetch_nintendo_play_history() -> list[dict]:
         )
 
         title_id = item.get("titleId") or item.get("id")
+        if not title_id:
+            shop_uri = item.get("shopUri", "")
+            m = re.search(r"/([0-9a-fA-F]{16})/?(?:[?#]|$)", shop_uri)
+            if m:
+                title_id = m.group(1)
 
         results.append({
             "name": str(name),
