@@ -982,6 +982,13 @@ async def get_game_by_appid(appid: int) -> aiosqlite.Row | None:
     return await get_game_by_identifier(STEAM_APP_ID, str(appid))
 
 
+async def get_game_by_igdb_id(igdb_id: int) -> aiosqlite.Row | None:
+    async with get_db() as db:
+        return await db.execute_fetchone(
+            "SELECT * FROM games WHERE igdb_id = ?", (igdb_id,)
+        )
+
+
 async def get_game_by_name_exact(name: str) -> aiosqlite.Row | None:
     async with get_db() as db:
         return await db.execute_fetchone(
@@ -1023,7 +1030,7 @@ async def get_steam_platform_row_by_appid(appid: int) -> aiosqlite.Row | None:
                       g.genres,
                       g.tags,
                       g.short_description,
-                      g.metacritic_score,
+                      g.release_date,
                       g.hltb_main,
                       g.hltb_extra,
                       g.hltb_complete,
@@ -1036,11 +1043,18 @@ async def get_steam_platform_row_by_appid(appid: int) -> aiosqlite.Row | None:
                       spd.protondb_cached_at,
                       spd.steamspy_cached_at,
                       spd.rtime_last_played,
-                      spd.library_updated_at
+                      spd.library_updated_at,
+                      gpe.metacritic_score,
+                      gpe.metacritic_url,
+                      gpe.opencritic_score,
+                      gpe.opencritic_tier,
+                      gpe.opencritic_percent_rec,
+                      gpe.platform_release_date
                FROM game_platform_identifiers gpi
                JOIN game_platforms gp ON gp.id = gpi.game_platform_id
                JOIN games g ON g.id = gp.game_id
                LEFT JOIN steam_platform_data spd ON spd.game_platform_id = gp.id
+               LEFT JOIN game_platform_enrichment gpe ON gpe.game_platform_id = gp.id
                WHERE gpi.identifier_type = ? AND gpi.identifier_value = ?
                LIMIT 1""",
             (STEAM_APP_ID, str(appid)),
@@ -1159,6 +1173,22 @@ async def upsert_steam_platform_data(game_platform_id: int, **fields) -> None:
         await db.commit()
 
 
+async def upsert_game_platform_enrichment(game_platform_id: int, **fields) -> None:
+    if not fields:
+        return
+    columns = ", ".join(["game_platform_id", *fields.keys()])
+    placeholders = ", ".join("?" for _ in range(len(fields) + 1))
+    updates = ", ".join(f"{column} = excluded.{column}" for column in fields)
+    async with get_db() as db:
+        await db.execute(
+            f"""INSERT INTO game_platform_enrichment ({columns})
+                VALUES ({placeholders})
+                ON CONFLICT(game_platform_id) DO UPDATE SET {updates}""",
+            (game_platform_id, *fields.values()),
+        )
+        await db.commit()
+
+
 async def load_fuzzy_candidates() -> dict[int, str]:
     """Load all game id->name pairs for use with find_game_by_name_fuzzy."""
     async with get_db() as db:
@@ -1205,6 +1235,12 @@ def _platform_dict(row: aiosqlite.Row) -> dict:
         "last_synced": row["last_synced"],
         "identifiers": {},
         "provider_data": {},
+        "platform_release_date": row["platform_release_date"],
+        "metacritic_score": row["metacritic_score"],
+        "metacritic_url": row["metacritic_url"],
+        "opencritic_score": row["opencritic_score"],
+        "opencritic_tier": row["opencritic_tier"],
+        "opencritic_percent_rec": row["opencritic_percent_rec"],
     }
 
     if row["platform"] == STEAM_PLATFORM:
@@ -1247,10 +1283,17 @@ async def load_platforms_for_games(game_ids: Iterable[int]) -> dict[int, list[di
                        spd.steam_review_desc,
                        spd.protondb_tier,
                        spd.rtime_last_played,
-                       spd.library_updated_at
+                       spd.library_updated_at,
+                       gpe.platform_release_date,
+                       gpe.metacritic_score,
+                       gpe.metacritic_url,
+                       gpe.opencritic_score,
+                       gpe.opencritic_tier,
+                       gpe.opencritic_percent_rec
                 FROM game_platforms gp
                 LEFT JOIN game_platform_identifiers gpi ON gpi.game_platform_id = gp.id
                 LEFT JOIN steam_platform_data spd ON spd.game_platform_id = gp.id
+                LEFT JOIN game_platform_enrichment gpe ON gpe.game_platform_id = gp.id
                 WHERE gp.game_id IN ({placeholders})
                 ORDER BY gp.game_id, gp.platform, gp.id, gpi.is_primary DESC, gpi.identifier_type""",
             ids,
