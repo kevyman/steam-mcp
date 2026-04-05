@@ -1,7 +1,6 @@
 """get_platform_breakdown, sync_platform, add_game_to_platform, and set_hardware_preference tools."""
 
 import json
-import os
 from ..data.db import get_db, set_meta, upsert_game, upsert_game_platform, upsert_game_platform_identifier
 
 
@@ -54,25 +53,24 @@ async def sync_platform(platform: str) -> dict:
     """
     Sync a single platform on demand.
     platform: steam | epic | gog | nintendo | ps5
+
+    Credential handling is left to each sync module (default config paths,
+    cookie fallback, etc.) — this tool does not gate on env vars.
     """
     import importlib
 
     _PLATFORM_MAP = {
-        "steam":    ("gamelib_mcp.data.steam_xml", "fetch_library",  None),
-        "epic":     ("gamelib_mcp.data.epic",       "sync_epic",      "EPIC_LEGENDARY_PATH"),
-        "gog":      ("gamelib_mcp.data.gog",        "sync_gog",       "GOG_REFRESH_TOKEN"),
-        "nintendo": ("gamelib_mcp.data.nintendo",   "sync_nintendo",  "NINTENDO_SESSION_TOKEN"),
-        "ps5":      ("gamelib_mcp.data.psn",        "sync_psn",       "PSN_NPSSO"),
+        "steam":    ("gamelib_mcp.data.steam_xml", "fetch_library"),
+        "epic":     ("gamelib_mcp.data.epic",       "sync_epic"),
+        "gog":      ("gamelib_mcp.data.gog",        "sync_gog"),
+        "nintendo": ("gamelib_mcp.data.nintendo",   "sync_nintendo"),
+        "ps5":      ("gamelib_mcp.data.psn",        "sync_psn"),
     }
 
     if platform not in _PLATFORM_MAP:
         return {"error": f"Unknown platform '{platform}'. Valid: {list(_PLATFORM_MAP)}"}
 
-    module_path, fn_name, env_key = _PLATFORM_MAP[platform]
-
-    if env_key and not os.getenv(env_key):
-        return {"error": f"{env_key} not set — cannot sync {platform}"}
-
+    module_path, fn_name = _PLATFORM_MAP[platform]
     try:
         module = importlib.import_module(module_path)
         fn = getattr(module, fn_name)

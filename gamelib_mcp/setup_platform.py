@@ -21,10 +21,14 @@ def _setup_gog() -> None:
     import aiohttp
     from dotenv import set_key
 
-    CLIENT_ID = "46899977096215655"
-    CLIENT_SECRET = "9d85c43b1718a031d5b64228ecd1a9eb"
+    # These are the publicly-known GOG Galaxy OAuth2 client credentials.
+    # They are not private secrets — they appear in lgogdownloader, heroic,
+    # and other open-source GOG clients. They grant no special access without
+    # a user's own authorization code.
+    GOG_GALAXY_CLIENT_ID = "46899977096215655"
+    GOG_GALAXY_CLIENT_SECRET = "9d85c43b1718a031d5b64228ecd1a9eb"  # noqa: S105
     AUTH_URL = (
-        f"https://auth.gog.com/auth?client_id={CLIENT_ID}"
+        f"https://auth.gog.com/auth?client_id={GOG_GALAXY_CLIENT_ID}"
         "&redirect_uri=https://embed.gog.com/on_login_success?origin=client"
         "&response_type=code&layout=client2"
     )
@@ -40,8 +44,8 @@ def _setup_gog() -> None:
             async with session.get(
                 "https://auth.gog.com/token",
                 params={
-                    "client_id": CLIENT_ID,
-                    "client_secret": CLIENT_SECRET,
+                    "client_id": GOG_GALAXY_CLIENT_ID,
+                    "client_secret": GOG_GALAXY_CLIENT_SECRET,
                     "grant_type": "authorization_code",
                     "code": code,
                     "redirect_uri": "https://embed.gog.com/on_login_success?origin=client",

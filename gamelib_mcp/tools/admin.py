@@ -2,7 +2,6 @@
 
 import json
 import logging
-import os
 import statistics
 from collections import defaultdict
 
@@ -30,17 +29,14 @@ async def refresh_library(platforms: list[str] | None = None) -> dict:
         results["steam"] = await fetch_library()
 
     platform_syncs = {
-        "epic":     (sync_epic,     "EPIC_LEGENDARY_PATH"),
-        "gog":      (sync_gog,      "GOG_REFRESH_TOKEN"),
-        "nintendo": (sync_nintendo, "NINTENDO_SESSION_TOKEN"),
-        "ps5":      (sync_psn,      "PSN_NPSSO"),
+        "epic":     sync_epic,
+        "gog":      sync_gog,
+        "nintendo": sync_nintendo,
+        "ps5":      sync_psn,
     }
 
-    for name, (fn, env_key) in platform_syncs.items():
+    for name, fn in platform_syncs.items():
         if name not in targets:
-            continue
-        if env_key and not os.getenv(env_key):
-            results[name] = {"skipped": True, "reason": f"{env_key} not set"}
             continue
         try:
             results[name] = await fn()

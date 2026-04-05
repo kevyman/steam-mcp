@@ -2,6 +2,19 @@
 
 from ..data.db import STEAM_APP_ID, get_db, load_platforms_for_games
 
+# Public alias → internal DB platform name
+_PLATFORM_ALIASES = {
+    "nintendo": "switch2",
+    "switch": "switch2",
+}
+
+
+def _resolve_platform(platform: str | None) -> str | None:
+    if platform is None:
+        return None
+    return _PLATFORM_ALIASES.get(platform.lower(), platform.lower())
+
+
 SORT_COLUMNS = {
     "playtime": "total_playtime_minutes",
     "name": "name",
@@ -43,6 +56,7 @@ WITH game_rollup AS (
 
 async def search_games(query: str, limit: int = 20, platform: str | None = None) -> list[dict]:
     """Find games in the library by name substring match, optionally filtered by platform."""
+    platform = _resolve_platform(platform)
     conditions = ["lower(name) LIKE lower(?)"]
     params: list = [f"%{query}%"]
     if platform:
@@ -135,6 +149,7 @@ async def get_library_stats(
         conditions.append(f"lower(COALESCE(protondb_tier, '')) IN ({placeholders})")
         params.extend(allowed)
 
+    platform = _resolve_platform(platform)
     if platform:
         conditions.append(
             "game_id IN (SELECT game_id FROM game_platforms WHERE platform = ? AND owned = 1)"
