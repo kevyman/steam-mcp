@@ -12,16 +12,19 @@ The current enrichment model treats a game as a single entity regardless of plat
 - Fuzzy name matching at sync time can merge different editions into the same `games` row (e.g., "Resident Evil 4" original and "Resident Evil 4 Remake" could collapse together)
 - `release_date` exists in the schema but is never populated
 - Non-Steam games (Nintendo, PSN, GOG, Epic) get no review enrichment at all
+- Non-Steam games also have no `tags` or `genres` — they're invisible to tag affinity scoring, `find_games_by_vibe`, and recommendations
 
 ## Goals
 
 1. Store platform-specific review scores (Metacritic, OpenCritic) per platform row, not per game
 2. Use IGDB as the canonical identity resolver so remakes, remasters, and distinct editions create separate `games` rows
 3. Populate `release_date` (canonical) and per-platform release dates
-4. Run review enrichment for all platforms in the background pipeline
+4. Populate `tags` and `genres` for non-Steam games via IGDB so they participate in recommendations and vibe search
+5. Run review enrichment for all platforms in the background pipeline
 
 ## Non-Goals
 
+- Backfilling tags for existing Steam games (they already have them from Steam Store / SteamSpy)
 - Changing how Steam-specific enrichment works (store data, ProtonDB, SteamSpy)
 - Changing tag affinity or recommendations logic
 - Differentiating OpenCritic scores by platform (their API is cross-platform aggregate — still more useful than PC-only Metacritic)
@@ -104,6 +107,22 @@ Applied for non-Steam platforms (Nintendo, PSN, GOG, Epic) when processing each 
 5. **No IGDB result** → fall back to existing fuzzy name matching (covers obscure titles absent from IGDB)
 
 Store `first_release_date` (Unix timestamp → ISO date string) into `games.release_date` if not already set. Record `igdb_cached_at`.
+
+### Tags and genres from IGDB
+
+When resolving IGDB for a game that has no `tags` or `genres` yet (all non-Steam games, and any Steam game where store enrichment didn't populate them), fetch and store:
+
+- `genres` → IGDB `genres.name` values → stored as JSON array in `games.genres` (same format as Steam)
+- `tags` → union of IGDB `themes.name` + `keywords.name` → stored as JSON array in `games.tags`
+
+**IGDB query fields to request:**
+```
+fields id, name, category, first_release_date, parent_game, platforms,
+       release_dates.platform, release_dates.date,
+       genres.name, themes.name, keywords.name;
+```
+
+This is a single API call per game — no additional requests beyond the identity resolution call. Steam games skip this: their tags come from Steam Store + SteamSpy which are richer and more tailored. Only write to `games.tags` / `games.genres` if the columns are currently null.
 
 ### Per-platform release dates
 
@@ -192,7 +211,7 @@ Game-level `metacritic_score` and `opencritic_score` fields are removed from the
 | File | Change |
 |------|--------|
 | `data/db.py` | V3 schema + migration; new `upsert_game_platform_enrichment` helper |
-| `data/igdb.py` | New — OAuth2 + game search |
+| `data/igdb.py` | New — OAuth2 + game search + tags/genres/release dates |
 | `data/opencritic.py` | Replace stub with real OpenCritic API client |
 | `data/metacritic.py` | New — platform-aware Metacritic scraper |
 | `data/steam_store.py` | Remove metacritic side-effect; store `release_date` |
